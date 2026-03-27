@@ -4,49 +4,20 @@ import joblib
 import os
 import re
 
-# Initialize FastAPI app
 app = FastAPI(
     title="AI Financial Assistant",
-    description="ML-powered API for Categorization, Cashflow Prediction & Anomaly Detection",
     version="1.0"
 )
 
-# Paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "models")
 
-# Load models safely
-try:
-    cat_model = joblib.load(os.path.join(MODEL_PATH, "categorization_model.pkl"))
-    vectorizer = joblib.load(os.path.join(MODEL_PATH, "vectorizer.pkl"))
-    cash_model = joblib.load(os.path.join(MODEL_PATH, "cashflow_model.pkl"))
-    anomaly_stats = joblib.load(os.path.join(MODEL_PATH, "anomaly_stats.pkl"))
-
-    mean = anomaly_stats['mean']
-    std = anomaly_stats['std']
-
-except Exception as e:
-    print("Error loading models:", e)
-    cat_model = None
-    vectorizer = None
-    cash_model = None
-    mean = 0
-    std = 1
-
-
-# -------------------------
-# Utility Function
-# -------------------------
 
 def clean_text(text):
     text = str(text).lower()
     text = re.sub(r'[^a-z\s]', '', text)
     return text
 
-
-# -------------------------
-# Request Schemas
-# -------------------------
 
 class CategoryRequest(BaseModel):
     description: str
@@ -62,10 +33,6 @@ class AnomalyRequest(BaseModel):
     amount: float
 
 
-# -------------------------
-# Routes
-# -------------------------
-
 @app.get("/")
 def home():
     return {"message": "API running 🚀"}
@@ -73,20 +40,18 @@ def home():
 
 @app.post("/predict-category")
 def predict_category(req: CategoryRequest):
-    if cat_model is None:
-        return {"error": "Model not loaded"}
+    cat_model = joblib.load(os.path.join(MODEL_PATH, "categorization_model.pkl"))
+    vectorizer = joblib.load(os.path.join(MODEL_PATH, "vectorizer.pkl"))
 
     text = clean_text(req.description)
     vec = vectorizer.transform([text])
-    result = cat_model.predict(vec)[0]
 
-    return {"category": result}
+    return {"category": cat_model.predict(vec)[0]}
 
 
 @app.post("/predict-cashflow")
 def predict_cashflow(req: CashflowRequest):
-    if cash_model is None:
-        return {"error": "Model not loaded"}
+    cash_model = joblib.load(os.path.join(MODEL_PATH, "cashflow_model.pkl"))
 
     prediction = cash_model.predict([[req.month, req.day, req.weekday]])[0]
 
@@ -95,8 +60,11 @@ def predict_cashflow(req: CashflowRequest):
 
 @app.post("/detect-anomaly")
 def detect_anomaly(req: AnomalyRequest):
-    z = (req.amount - mean) / std
-    result = 1 if abs(z) > 3 else 0
+    anomaly_stats = joblib.load(os.path.join(MODEL_PATH, "anomaly_stats.pkl"))
 
-    return {"anomaly": result}
-# force update
+    mean = anomaly_stats['mean']
+    std = anomaly_stats['std']
+
+    z = (req.amount - mean) / std
+
+    return {"anomaly": 1 if abs(z) > 3 else 0}
